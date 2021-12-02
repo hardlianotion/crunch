@@ -2,9 +2,11 @@ package crunch
 
 import java.time.format.DateTimeFormatter
 import java.time.LocalDate
+import java.io.{FileWriter, BufferedWriter, File}
 
 import scala.annotation.tailrec
 import scala.io.Source.fromFile
+import scala.collection.SortedMap
 import scala.util.Try
 
 object CurrencyMappedStatement:
@@ -68,16 +70,15 @@ object CurrencyMappedStatement:
   
   def readEntries (path: String): Try [IndexedSeq [Entry]] =
     @tailrec
-    def impl (curr: BaseEntry, rank: Int, input: Iterator [String], output: IndexedSeq [Entry]): IndexedSeq [Entry] =
+    def impl (curr: BaseEntry, input: Iterator [String], output: IndexedSeq [Entry]): IndexedSeq [Entry] =
       if input.hasNext then
         val next = line2Entry (input.next)
         if curr.kind == "CURRENCY TRANSFER" then
-          val dr = if curr.date == output.last.date then DateRank (curr.date, rank + 1) else DateRank (curr.date, 0)
-          val transfer = TransferEntry (dr, curr.counter, curr.reference, curr.amount, curr.balance)
+          val transfer = TransferEntry (DateRank (curr.date, 0), curr.counter, curr.reference, curr.amount, curr.balance)
           
-          impl (next, dr.rank, input, output :+ transfer)
+          impl (next, input, output :+ transfer)
         else
-          impl (next, rank, input, output :+ curr)
+          impl (next, input, output :+ curr)
       else
         output
     Try {
@@ -85,7 +86,7 @@ object CurrencyMappedStatement:
       val lines = source.getLines.drop (1)
       val be = line2Entry (lines.next)
 
-      impl (be, 0, lines, IndexedSeq.empty [Entry])     
+      impl (be, lines, IndexedSeq.empty [Entry])     
     }
   
   def readFx (path: String): Try [Iterator [Fx]] =
@@ -96,7 +97,57 @@ object CurrencyMappedStatement:
       yield
         line2Fx (line)
     }
+//  val file = File(s"data/service/service-time-gap-${ServiceTime.minServiceGap}-arr-${ServiceTime.arrivalSearchLimit}-pro-${ServiceTime.proximityLimit}-spd-${ServiceTime.loSpeedLimit}-dil-${ServiceTime.timeDilator}-ovr-${ServiceTime.acceptOverlap}.csv ")
+//      val baselineOut = BufferedWriter (FileWriter (file))
 
+  def writeEntry (entry: BaseEntry, writer: BufferedWriter): Unit = 
+    val amountStr = f"${entry.amount}%2.2f"
+    val balStr = f"${entry.balance}%2.2f"
+    writer.write (s"${entry.date},${entry.counter},${entry.reference},${entry.kind},${amountStr},${balStr}\n")
+
+  def runAccounts (fxPath: String, eurPath: String, gbpPath: String) =
+    val maybeEurEntries = readEntries (eurPath)
+    val maybeGbpEntries = readEntries (gbpPath)
+    val maybeFxEntries = readFx (fxPath)
+    val file = File ("eur2gbpout.csv")
+    val output = BufferedWriter (FileWriter (file))
+
+    maybeGbpEntries.foreach (i => i.foreach (println))
+    for 
+      fxEntries <- maybeFxEntries
+      gbpEntries <- maybeGbpEntries
+      eurEntries <- maybeEurEntries
+    do
+      val fxMap = fxEntries.map (x => (x.fixedAt -> x.eur2gbp)).to [SortedMap [LocalDate, Double]] (SortedMap)
+      val gbpTransfers = 
+        gbpEntries
+          .foldLeft (Map.empty [DateRank, TransferEntry]) { 
+            case (agg, trans @ TransferEntry (dr, counter, ref, amt, bal)) =>
+              @tailrec
+              def impl (dr: DateRank): DateRank = 
+                if agg.contains (dr) then
+                  impl (DateRank (dr.at, dr.rank + 1))
+                else
+                  dr
+              agg + (impl (dr) -> trans)
+            case (agg, base: BaseEntry) => 
+              agg
+          }
+
+      for 
+        eurEntry <- eurEntries
+      do
+        eurEntry match 
+          case te @ TransferEntry (dt, counter, ref, amt, bal) => 
+            val gbpTran = gbpTransfers (dt)
+            val amount = -gbpTran.amount
+            writeEntry (BaseEntry (dt.at, counter, ref, "TRANSFER CURRENCY", amount, bal + amount), output)           
+          case ent @ BaseEntry (dt, counter, ref, kind, amt, bal) =>
+            val fxTran = fxMap.get (dt).orElse (fxMap.maxBefore (dt).map ( x => x._2)).getOrElse (Double.NegativeInfinity)
+            val amountTran = fxTran * amt
+            val balTran = fxTran * bal
+            writeEntry (BaseEntry (dt, counter, ref, kind, amountTran, balTran), output)
+    output.close
   @main
   def run =
     runAccounts (
@@ -104,25 +155,3 @@ object CurrencyMappedStatement:
       "data/StarlingStatement_2021-03-01_2021-11-20-eur.csv", 
       "data/StarlingStatement_2021-03-01_2021-11-20-gbp.csv")
 
-  def runAccounts (fxPath: String, eurPath: String, gbpPath: String) =
-    val maybeEurEntries = readEntries (eurPath)
-    val maybeGbpEntries = readEntries (gbpPath)
-    val maybeFxEntries = readFx (fxPath)
-
-    for 
-      fxEntries <- maybeFxEntries
-      gbpEntries <- maybeGbpEntries
-      eurEntries <- maybeEurEntries
-    do
-      val fxMap = fxEntries.map (x => (x.fixedAt -> x.eur2gbp)).toMap
-      
-      for 
-        eurEntry <- eurEntries
-      do
-        eurEntry match 
-          case te @ TransferEntry (DateRank (dt, rnk), counter, ref, amt, bal) => 
-            ???
-          case ent @ BaseEntry (dt, counter, ref, kind, amt, bal) =>
-            ???
-        println (s"DEBUG--${gbpEntries.head}")
-      

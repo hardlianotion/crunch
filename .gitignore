@@ -6,4 +6,5 @@ data/
 project/
 target/
 .tags
+*.csv
 *.swp
