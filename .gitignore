@@ -8,3 +8,5 @@ target/
 .tags
 *.csv
 *.swp
+.DS_Store
+.idea/
