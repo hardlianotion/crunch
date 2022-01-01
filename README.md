@@ -20,3 +20,6 @@ and Crunch prefers to account for EUR  by transforming the transactions into GBP
 ECB rate.  The wrinkle comes when there is a transfer from my EUR account to my GBP account, as then the recrded
 GBP quantity is likely to be different to the EUR quantity.  My GBP-EUR account transfers don't have this problem.
 
+## Known problems
+
+Still can't parse quoted input fields containing commas.  
