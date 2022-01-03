@@ -54,12 +54,15 @@ object CurrencyMappedStatement:
     eur2gbp: Double
   )
 
-  def line2Entry (line: String): BaseEntry = 
+  def starlingLine2Entry (line: String): BaseEntry =
     val Array (date, counter, ref, kind, amount, balance, _) =
       line.split (",")//.map (_.trim)
     val formatter = DateTimeFormatter.ofPattern("dd/MM/uuuu")
     
     BaseEntry (LocalDate.parse (date, formatter), counter, ref, kind, amount.toDouble, balance.toDouble)
+
+  def wiseLine2Entry (line: String): BaseEntry =
+    ???
       
 
   def line2Fx (line: String): FxEntry =
@@ -73,7 +76,7 @@ object CurrencyMappedStatement:
   def gbpHeader: String = 
     "Date,Counter Party,Reference,Type,Amount (GBP),Balance (GBP),Spending Category,Notes"
   
-  def readEntries (reconcileWith: String, path: String): Try [IndexedSeq [Entry]] =
+  def readEntries (line2Entry: String => Entry) (reconcileWith: String, path: String): Try [IndexedSeq [Entry]] =
     @tailrec
     def impl (input: Iterator [String], output: IndexedSeq [Entry]): IndexedSeq [Entry] =
       if input.hasNext then
@@ -98,7 +101,7 @@ object CurrencyMappedStatement:
 
       impl (lines, IndexedSeq.empty [Entry])
     }
-  
+
   def readFx (path: String): Try [Iterator [Option [FxEntry]]] =
     Try {
       val source = fromFile (path)
@@ -131,17 +134,17 @@ object CurrencyMappedStatement:
         BaseEntry (dt, counter, ref, kind, amountTran, 0.0)
 
 
-  def writeEntry (entry: BaseEntry, writer: BufferedWriter): Unit = 
+  def writeEntry (entry: BaseEntry, writer: BufferedWriter): Unit =
     val amountStr = f"${entry.amount}%2.2f"
     val balStr = f"${entry.balance}%2.2f"
     val dateStr = entry.date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
     writer.write (s"$dateStr,${entry.counter},${entry.reference},${entry.kind},${amountStr},${balStr}\n")
 
-  def runAccounts (reconcileWith: String, fxPath: String, eurPath: String, gbpPath: String) =
-    val maybeEurEntries = readEntries (reconcileWith, eurPath)
-    val maybeGbpEntries = readEntries (reconcileWith, gbpPath)
+  def runAccounts (line2Entry: String => Entry, acctName: String) (reconcileWith: String, fxPath: String, eurPath: String, gbpPath: String) =
+    val maybeEurEntries = readEntries (line2Entry) (reconcileWith, eurPath)
+    val maybeGbpEntries = readEntries (line2Entry) (reconcileWith, gbpPath)
     val maybeFxEntries = readFx (fxPath)
-    val file = File ("eur2gbpout.csv")
+    val file = File (s"$acctName-eur2gbpout.csv")
     val output = BufferedWriter (FileWriter (file))
 
     for
@@ -182,9 +185,15 @@ object CurrencyMappedStatement:
     output.close
   @main
   def run =
-    runAccounts (
+    runAccounts (starlingLine2Entry, "starling") (
       "Ergates Limited",
       "data/fx-eurgbp.csv",
       "data/StarlingStatement_2021-01-15_2021-12-29-eur.csv",
       "data/StarlingStatement_2021-01-01_2021-12-29-gbp.csv")
+    runAccounts (wiseLine2Entry, "wise") (
+      "Ergates Limited",
+      "data/fx-eurgbp.csv",
+      "data/statement_20178858_EUR_2021-04-01_2021-12-31.csv",
+      "data/statement_20203273_GBP_2021-04-01_2021-12-31.csv"
+    )
 
