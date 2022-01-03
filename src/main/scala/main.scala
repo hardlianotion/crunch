@@ -81,12 +81,14 @@ object CurrencyMappedStatement:
         val curr = line2Entry (currInput)
 
         if curr.kind == "CURRENCY TRANSFER" && curr.counter == reconcileWith then
-          val transfer = TransferEntry (DateRank (curr.date, 0), curr.counter, curr.reference, curr.amount)
-          println (s"TRANS INPUT $transfer")
+          val idx =
+            output.last match
+              case TransferEntry (DateRank (curr.date, idx), _, _, _) => idx + 1
+              case _ => 0
 
+          val transfer = TransferEntry (DateRank (curr.date, idx), curr.counter, curr.reference, curr.amount)
           impl (input, output :+ transfer)
         else
-          println (s"CURR INPUT $curr")
           impl (input, output :+ curr)
       else
         output
@@ -170,9 +172,11 @@ object CurrencyMappedStatement:
         .map (e => transformEurEntry (e, fxMap, gbpTransfers))
         .foldLeft (IndexedSeq.empty [BaseEntry]) { (agg, rhs) =>
           if agg.isEmpty then
-            IndexedSeq (BaseEntry (rhs.date, rhs.counter, rhs.reference, rhs.kind, rhs.amount, rhs.amount))
+            val balance = f"${rhs.amount}%2.2f".toDouble
+            IndexedSeq (BaseEntry (rhs.date, rhs.counter, rhs.reference, rhs.kind, rhs.amount, balance))
           else
-            agg :+ BaseEntry (rhs.date, rhs.counter, rhs.reference, rhs.kind, rhs.amount, agg.last.balance + rhs.amount)
+            val amount = f"${rhs.amount}%2.2f".toDouble
+            agg :+ BaseEntry (rhs.date, rhs.counter, rhs.reference, rhs.kind, rhs.amount, agg.last.balance + amount)
         }
         .foreach (e => writeEntry (e, output))
     output.close
