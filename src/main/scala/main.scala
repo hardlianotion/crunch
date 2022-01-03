@@ -56,14 +56,17 @@ object CurrencyMappedStatement:
 
   def starlingLine2Entry (line: String): BaseEntry =
     val Array (date, counter, ref, kind, amount, balance, _) =
-      line.split (",")//.map (_.trim)
+      line.split (",").map (_.trim)
     val formatter = DateTimeFormatter.ofPattern("dd/MM/uuuu")
     
     BaseEntry (LocalDate.parse (date, formatter), counter, ref, kind, amount.toDouble, balance.toDouble)
-
+//"TransferWise ID",Date,Amount,Currency,Description,"Payment Reference","Running Balance","Exchange From","Exchange To","Exchange Rate","Payer Name","Payee Name","Payee Account Number",Merchant,"Card Last Four Digits","Card Holder Full Name",Attachment,Note,"Total fees"
   def wiseLine2Entry (line: String): BaseEntry =
-    ???
-      
+    val Array (id, date, amount, curr, desc, ref, balance, from, to, rate, payer, payee,_, _, _, _, _, _,fees) =
+      line.split (",").map (_.trim)
+    val formatter = DateTimeFormatter.ofPattern("dd-MM-uuuu")
+
+    BaseEntry (LocalDate.parse (date, formatter), to, ref, desc, amount.toDouble, balance.toDouble)
 
   def line2Fx (line: String): FxEntry =
     val Array (at, eur2gbp) =
@@ -76,7 +79,7 @@ object CurrencyMappedStatement:
   def gbpHeader: String = 
     "Date,Counter Party,Reference,Type,Amount (GBP),Balance (GBP),Spending Category,Notes"
   
-  def readEntries (line2Entry: String => Entry) (reconcileWith: String, path: String): Try [IndexedSeq [Entry]] =
+  def readEntries (line2Entry: String => BaseEntry) (reconcileWith: String, path: String): Try [IndexedSeq [Entry]] =
     @tailrec
     def impl (input: Iterator [String], output: IndexedSeq [Entry]): IndexedSeq [Entry] =
       if input.hasNext then
@@ -140,7 +143,7 @@ object CurrencyMappedStatement:
     val dateStr = entry.date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
     writer.write (s"$dateStr,${entry.counter},${entry.reference},${entry.kind},${amountStr},${balStr}\n")
 
-  def runAccounts (line2Entry: String => Entry, acctName: String) (reconcileWith: String, fxPath: String, eurPath: String, gbpPath: String) =
+  def runAccounts (line2Entry: String => BaseEntry, acctName: String) (reconcileWith: String, fxPath: String, eurPath: String, gbpPath: String) =
     val maybeEurEntries = readEntries (line2Entry) (reconcileWith, eurPath)
     val maybeGbpEntries = readEntries (line2Entry) (reconcileWith, gbpPath)
     val maybeFxEntries = readFx (fxPath)
@@ -193,7 +196,7 @@ object CurrencyMappedStatement:
     runAccounts (wiseLine2Entry, "wise") (
       "Ergates Limited",
       "data/fx-eurgbp.csv",
-      "data/statement_20178858_EUR_2021-04-01_2021-12-31.csv",
+      "data/statement_20178858_EUR_2021-04-01_2021-12-31-2.csv",
       "data/statement_20203273_GBP_2021-04-01_2021-12-31.csv"
     )
 
