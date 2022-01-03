@@ -1,9 +1,10 @@
 package crunch
 
-import java.time.format.DateTimeFormatter
-import java.time.{LocalDate, Duration}
-import java.io.{FileWriter, BufferedWriter, File}
+import crunch.CurrencyMappedStatement.BaseEntry
 
+import java.time.format.DateTimeFormatter
+import java.time.{Duration, LocalDate}
+import java.io.{BufferedWriter, File, FileWriter}
 import scala.annotation.tailrec
 import scala.io.Source.fromFile
 import scala.collection.SortedMap
@@ -30,15 +31,14 @@ object CurrencyMappedStatement:
     counter: String, 
     reference: String, 
     kind: String, 
-    amount: Double, 
+    amount: Double,
     balance: Double) extends Entry
 
   case class TransferEntry (
     orderedAt: DateRank, 
     counter: String, 
     reference: String, 
-    amount: Double, 
-    balance: Double) extends Entry:
+    amount: Double) extends Entry:
     def date: LocalDate =
       orderedAt.at
 
@@ -75,23 +75,26 @@ object CurrencyMappedStatement:
   
   def readEntries (reconcileWith: String, path: String): Try [IndexedSeq [Entry]] =
     @tailrec
-    def impl (curr: BaseEntry, input: Iterator [String], output: IndexedSeq [Entry]): IndexedSeq [Entry] =
+    def impl (input: Iterator [String], output: IndexedSeq [Entry]): IndexedSeq [Entry] =
       if input.hasNext then
-        val next = line2Entry (input.next)
+        val currInput = input.next
+        val curr = line2Entry (currInput)
+
         if curr.kind == "CURRENCY TRANSFER" && curr.counter == reconcileWith then
-          val transfer = TransferEntry (DateRank (curr.date, 0), curr.counter, curr.reference, curr.amount, curr.balance)
-          
-          impl (next, input, output :+ transfer)
+          val transfer = TransferEntry (DateRank (curr.date, 0), curr.counter, curr.reference, curr.amount)
+          println (s"TRANS INPUT $transfer")
+
+          impl (input, output :+ transfer)
         else
-          impl (next, input, output :+ curr)
+          println (s"CURR INPUT $curr")
+          impl (input, output :+ curr)
       else
         output
     Try {
       val source = fromFile (path)
       val lines = source.getLines.drop (1)
-      val be = line2Entry (lines.next)
 
-      impl (be, lines, IndexedSeq.empty [Entry])     
+      impl (lines, IndexedSeq.empty [Entry])
     }
   
   def readFx (path: String): Try [Iterator [Option [FxEntry]]] =
@@ -112,10 +115,25 @@ object CurrencyMappedStatement:
 //  val file = File(s"data/service/service-time-gap-${ServiceTime.minServiceGap}-arr-${ServiceTime.arrivalSearchLimit}-pro-${ServiceTime.proximityLimit}-spd-${ServiceTime.loSpeedLimit}-dil-${ServiceTime.timeDilator}-ovr-${ServiceTime.acceptOverlap}.csv ")
 //      val baselineOut = BufferedWriter (FileWriter (file))
 
+  def transformEurEntry (eurEntry: Entry, fxMap: SortedMap [LocalDate, Double], gbpTransfers: Map [DateRank, TransferEntry]): BaseEntry =
+    eurEntry match
+      case te @ TransferEntry (dt, counter, ref, amt) =>
+        val gbpTran = gbpTransfers (dt)
+        val amount = -gbpTran.amount
+
+        BaseEntry (dt.at, counter, ref, "TRANSFER CURRENCY", amount, 0.0)
+      case ent @ BaseEntry (dt, counter, ref, kind, amt, bal) =>
+        val fxTran = fxMap.get (dt).orElse (fxMap.maxBefore (dt).map ( x => x._2)).getOrElse (Double.NegativeInfinity)
+        val amountTran = fxTran * amt
+
+        BaseEntry (dt, counter, ref, kind, amountTran, 0.0)
+
+
   def writeEntry (entry: BaseEntry, writer: BufferedWriter): Unit = 
     val amountStr = f"${entry.amount}%2.2f"
     val balStr = f"${entry.balance}%2.2f"
-    writer.write (s"${entry.date},${entry.counter},${entry.reference},${entry.kind},${amountStr},${balStr}\n")
+    val dateStr = entry.date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+    writer.write (s"$dateStr,${entry.counter},${entry.reference},${entry.kind},${amountStr},${balStr}\n")
 
   def runAccounts (reconcileWith: String, fxPath: String, eurPath: String, gbpPath: String) =
     val maybeEurEntries = readEntries (reconcileWith, eurPath)
@@ -124,8 +142,7 @@ object CurrencyMappedStatement:
     val file = File ("eur2gbpout.csv")
     val output = BufferedWriter (FileWriter (file))
 
-    maybeGbpEntries.foreach (i => i.foreach (println))
-    for 
+    for
       fxEntries <- maybeFxEntries
       gbpEntries <- maybeGbpEntries
       eurEntries <- maybeEurEntries
@@ -134,7 +151,7 @@ object CurrencyMappedStatement:
       val gbpTransfers = 
         gbpEntries
           .foldLeft (Map.empty [DateRank, TransferEntry]) { 
-            case (agg, trans @ TransferEntry (dr, counter, ref, amt, bal)) =>
+            case (agg, trans @ TransferEntry (dr, counter, ref, amt)) =>
               @tailrec
               def impl (dr: DateRank): DateRank = 
                 if agg.contains (dr) then
@@ -145,20 +162,19 @@ object CurrencyMappedStatement:
             case (agg, base: BaseEntry) => 
               agg
           }
-
-      for 
-        eurEntry <- eurEntries
-      do
-        eurEntry match 
-          case te @ TransferEntry (dt, counter, ref, amt, bal) =>
-            val gbpTran = gbpTransfers (dt)
-            val amount = -gbpTran.amount
-            writeEntry (BaseEntry (dt.at, counter, ref, "TRANSFER CURRENCY", amount, bal + amount), output)           
-          case ent @ BaseEntry (dt, counter, ref, kind, amt, bal) =>
-            val fxTran = fxMap.get (dt).orElse (fxMap.maxBefore (dt).map ( x => x._2)).getOrElse (Double.NegativeInfinity)
-            val amountTran = fxTran * amt
-            val balTran = fxTran * bal
-            writeEntry (BaseEntry (dt, counter, ref, kind, amountTran, balTran), output)
+      // transform entries into GBP
+      // aggregate the balance
+      // write to file.
+      println (s"There are ${eurEntries.size} entries")
+      eurEntries
+        .map (e => transformEurEntry (e, fxMap, gbpTransfers))
+        .foldLeft (IndexedSeq.empty [BaseEntry]) { (agg, rhs) =>
+          if agg.isEmpty then
+            IndexedSeq (BaseEntry (rhs.date, rhs.counter, rhs.reference, rhs.kind, rhs.amount, rhs.amount))
+          else
+            agg :+ BaseEntry (rhs.date, rhs.counter, rhs.reference, rhs.kind, rhs.amount, agg.last.balance + rhs.amount)
+        }
+        .foreach (e => writeEntry (e, output))
     output.close
   @main
   def run =
