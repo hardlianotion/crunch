@@ -5,6 +5,7 @@ import crunch.CurrencyMappedStatement.BaseEntry
 import java.time.format.DateTimeFormatter
 import java.time.{Duration, LocalDate}
 import java.io.{BufferedWriter, File, FileWriter}
+import java.time.temporal.{ChronoField, ChronoUnit}
 import scala.annotation.tailrec
 import scala.io.Source.fromFile
 import scala.collection.SortedMap
@@ -102,7 +103,11 @@ object CurrencyMappedStatement:
       val source = fromFile (path)
       val lines = source.getLines.drop (1)
 
-      impl (lines, IndexedSeq.empty [Entry])
+      val input = impl (lines, IndexedSeq.empty [Entry])
+      if input.head.date.isBefore (input.last.date) then
+        input
+      else
+        input.reverse
     }
 
   def readFx (path: String): Try [Iterator [Option [FxEntry]]] =
@@ -158,7 +163,7 @@ object CurrencyMappedStatement:
       val fxMap = buildFxMap (fxEntries)
       val gbpTransfers = 
         gbpEntries
-          .foldLeft (Map.empty [DateRank, TransferEntry]) { 
+          .foldLeft (Map.empty [DateRank, TransferEntry]) {
             case (agg, trans @ TransferEntry (dr, counter, ref, amt)) =>
               @tailrec
               def impl (dr: DateRank): DateRank = 
