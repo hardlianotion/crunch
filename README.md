@@ -6,12 +6,12 @@ reconciliation activity in my online accounting provider, Crunch Accounting.
 usage crunch ecb-rates-csv eur-starling-statement-csv gbp-starling-statement-csv
 
 where
- - ecb-rates-csv is a csv containing ecb reference rates for eur-gbp (FIXME - add the link)
+ - ecb-rates-csv is a csv containing ecb reference rates for [eur-gbp](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/eurofxref-graph-gbp.en.html)
  - eur-starling-statement-csv is a csv-formatted starling statement (downloaded from Starling EUR account)
  - gbp-starling-statement-csv is a csv-formatted startling statement (downloaded from Starling GBP account)
 
 Apparently, Crunch will be starting an api service at some unspecified point in the future.
-Apparently, Crunch will also support reconcliliation for currencies other than GBP
+Apparently, Crunch will also support reconciliation for currencies other than GBP
 
 ## How it works
 

@@ -1,8 +1,9 @@
 .bloop/
-crunch/
+/crunch
 .bsp/
 .metals/
 data/
+out
 project/
 target/
 .tags

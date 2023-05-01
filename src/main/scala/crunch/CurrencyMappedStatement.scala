@@ -1,7 +1,5 @@
 package crunch
 
-import crunch.CurrencyMappedStatement.BaseEntry
-
 import java.time.format.DateTimeFormatter
 import java.time.{Duration, LocalDate}
 import java.io.{BufferedWriter, File, FileWriter}
@@ -10,6 +8,7 @@ import scala.annotation.tailrec
 import scala.io.Source.fromFile
 import scala.collection.SortedMap
 import scala.util.Try
+
 
 object CurrencyMappedStatement:
 
@@ -58,14 +57,14 @@ object CurrencyMappedStatement:
   def starlingLine2Entry (line: String): BaseEntry =
     val Array (date, counter, ref, kind, amount, balance, _) =
       line.split (",").map (_.trim)
-    val formatter = DateTimeFormatter.ofPattern("dd/MM/uuuu")
+    val formatter = DateTimeFormatter.ofPattern ("dd/MM/uuuu")
     
     BaseEntry (LocalDate.parse (date, formatter), counter, ref, kind, amount.toDouble, balance.toDouble)
 //"TransferWise ID",Date,Amount,Currency,Description,"Payment Reference","Running Balance","Exchange From","Exchange To","Exchange Rate","Payer Name","Payee Name","Payee Account Number",Merchant,"Card Last Four Digits","Card Holder Full Name",Attachment,Note,"Total fees"
   def wiseLine2Entry (line: String): BaseEntry =
     val Array (id, date, amount, curr, desc, ref, balance, from, to, rate, payer, payee,_, _, _, _, _, _,fees) =
       line.split (",").map (_.trim)
-    val formatter = DateTimeFormatter.ofPattern("dd-MM-uuuu")
+    val formatter = DateTimeFormatter.ofPattern ("dd-MM-uuuu")
 
     BaseEntry (LocalDate.parse (date, formatter), to, ref, desc, amount.toDouble, balance.toDouble)
 
@@ -110,20 +109,11 @@ object CurrencyMappedStatement:
         input.reverse
     }
 
-  def readFx (path: String): Try [Iterator [Option [FxEntry]]] =
-    Try {
-      val source = fromFile (path)
-      for
-        line <- source.getLines.drop (1)
-      yield
-        Try {line2Fx (line)}.toOption
-    }
-
   def buildFxMap (entries: Iterator [Option [FxEntry]]): SortedMap [LocalDate, Double] =
     entries.foldLeft (List.empty [FxEntry]) { (agg, rhs) => rhs match
       case Some (entry) => entry :: agg
       case None => agg
-    }.map (x => (x.at.plusDays (1) -> x.eur2gbp)).to [SortedMap [LocalDate, Double]] (SortedMap)
+    }.map (x => x.at.plusDays (1) -> x.eur2gbp).to [SortedMap [LocalDate, Double]] (SortedMap)
 
 //  val file = File(s"data/service/service-time-gap-${ServiceTime.minServiceGap}-arr-${ServiceTime.arrivalSearchLimit}-pro-${ServiceTime.proximityLimit}-spd-${ServiceTime.loSpeedLimit}-dil-${ServiceTime.timeDilator}-ovr-${ServiceTime.acceptOverlap}.csv ")
 //      val baselineOut = BufferedWriter (FileWriter (file))
@@ -145,13 +135,20 @@ object CurrencyMappedStatement:
   def writeEntry (entry: BaseEntry, writer: BufferedWriter): Unit =
     val amountStr = f"${entry.amount}%2.2f"
     val balStr = f"${entry.balance}%2.2f"
-    val dateStr = entry.date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
-    writer.write (s"$dateStr,${entry.counter},${entry.reference},${entry.kind},${amountStr},${balStr}\n")
+    val dateStr = entry.date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+    writer.write (s"$dateStr,${entry.counter},${entry.reference},${entry.kind},$amountStr,$balStr\n")
 
-  def runAccounts (line2Entry: String => BaseEntry, acctName: String) (reconcileWith: String, fxPath: String, eurPath: String, gbpPath: String) =
+  def runAccounts (
+    line2Entry: String => BaseEntry, acctName: String
+  ) (
+    reconcileWith: String,
+    fxPath: String,
+    eurPath: String,
+    gbpPath: String
+  ): Unit =
     val maybeEurEntries = readEntries (line2Entry) (reconcileWith, eurPath)
     val maybeGbpEntries = readEntries (line2Entry) (reconcileWith, gbpPath)
-    val maybeFxEntries = readFx (fxPath)
+    val maybeFxEntries = FxReader.fromXml (fxPath)
     val file = File (s"$acctName-eur2gbpout.csv")
     val output = BufferedWriter (FileWriter (file))
 
@@ -178,7 +175,7 @@ object CurrencyMappedStatement:
       // transform entries into GBP
       // aggregate the balance
       // write to file.
-      println (s"There are ${eurEntries.size} entries")
+      println (s"There are ${eurEntries.size} EUR entries and ${gbpEntries.size} GBP entries.")
       eurEntries
         .map (e => transformEurEntry (e, fxMap, gbpTransfers))
         .foldLeft (IndexedSeq.empty [BaseEntry]) { (agg, rhs) =>
@@ -190,18 +187,18 @@ object CurrencyMappedStatement:
             agg :+ BaseEntry (rhs.date, rhs.counter, rhs.reference, rhs.kind, rhs.amount, agg.last.balance + amount)
         }
         .foreach (e => writeEntry (e, output))
-    output.close
+    output.close ()
   @main
-  def run =
+  def run (): Unit =
     runAccounts (starlingLine2Entry, "starling") (
       "Ergates Limited",
-      "data/fx-eurgbp.csv",
-      "data/StarlingStatement_2021-01-15_2021-12-29-eur.csv",
-      "data/StarlingStatement_2021-01-01_2021-12-29-gbp.csv")
+      "data/fx-eur-gbp-2023-03-15.xml",
+      "data/StarlingStatement_2021-12-01_2022-11-30-eur.csv",
+      "data/StarlingStatement_2021-12-01_2022-11-30-gbp.csv")
     runAccounts (wiseLine2Entry, "wise") (
       "Ergates Limited",
-      "data/fx-eurgbp.csv",
-      "data/statement_20178858_EUR_2021-04-01_2021-12-31-2.csv",
-      "data/statement_20203273_GBP_2021-04-01_2021-12-31.csv"
+      "data/fx-eur-gbp-2023-03-15.xml",
+      "data/statement_20178858_EUR_2021-12-01_2022-11-30.csv",
+      "data/statement_20203273_GBP_2021-12-01_2022-11-30.csv"
     )
 
