@@ -19,10 +19,10 @@ object FxReader:
     }
 
   def fromXml (path: String): Try [Iterator [Option [FxEntry]]] =
-    val currencyXml = xml.XML.loadFile (path)
-    Try {(currencyXml \\ "Obs")
-      .iterator
-      .map (x => (x \ "@TIME_PERIOD").text -> (x \ "@OBS_VALUE").text)
-      .map ((at, fx) => Try {FxEntry (LocalDate.parse (at), fx.toDouble)}.toOption)}
-
-  
+    val result = Try {xml.XML.loadFile (path)}
+    result.map { xml =>
+      (xml \\ "Obs")
+        .iterator
+        .map (x => (x \ "@TIME_PERIOD").text -> (x \ "@OBS_VALUE").text)
+        .map ((at, fx) => Try {FxEntry (LocalDate.parse (at), fx.toDouble)}.toOption)
+    }

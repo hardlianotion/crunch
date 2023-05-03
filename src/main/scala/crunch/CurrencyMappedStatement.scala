@@ -7,7 +7,8 @@ import java.time.temporal.{ChronoField, ChronoUnit}
 import scala.annotation.tailrec
 import scala.io.Source.fromFile
 import scala.collection.SortedMap
-import scala.util.Try
+import scala.util.{Try, Using}
+import zio.json.*
 
 
 object CurrencyMappedStatement:
@@ -139,17 +140,18 @@ object CurrencyMappedStatement:
     writer.write (s"$dateStr,${entry.counter},${entry.reference},${entry.kind},$amountStr,$balStr\n")
 
   def runAccounts (
-    line2Entry: String => BaseEntry, acctName: String
+    line2Entry: String => BaseEntry, acctName: String, gbpBalance: Double
   ) (
     reconcileWith: String,
     fxPath: String,
     eurPath: String,
-    gbpPath: String
+    gbpPath: String,
+    outDir: String
   ): Unit =
     val maybeEurEntries = readEntries (line2Entry) (reconcileWith, eurPath)
     val maybeGbpEntries = readEntries (line2Entry) (reconcileWith, gbpPath)
     val maybeFxEntries = FxReader.fromXml (fxPath)
-    val file = File (s"$acctName-eur2gbpout.csv")
+    val file = File (s"$outDir/$acctName-eur2gbpout.csv")
     val output = BufferedWriter (FileWriter (file))
 
     for
@@ -180,7 +182,7 @@ object CurrencyMappedStatement:
         .map (e => transformEurEntry (e, fxMap, gbpTransfers))
         .foldLeft (IndexedSeq.empty [BaseEntry]) { (agg, rhs) =>
           if agg.isEmpty then
-            val balance = f"${rhs.amount}%2.2f".toDouble
+            val balance = f"${rhs.amount + gbpBalance}%2.2f".toDouble
             IndexedSeq (BaseEntry (rhs.date, rhs.counter, rhs.reference, rhs.kind, rhs.amount, balance))
           else
             val amount = f"${rhs.amount}%2.2f".toDouble
@@ -188,17 +190,36 @@ object CurrencyMappedStatement:
         }
         .foreach (e => writeEntry (e, output))
     output.close ()
+
+  case class NamedBalance (name: String, balance: Double)
+
+  implicit val matchDecoder: JsonDecoder [NamedBalance] =
+  DeriveJsonDecoder.gen [NamedBalance]
+
   @main
   def run (): Unit =
-    runAccounts (starlingLine2Entry, "starling") (
-      "Ergates Limited",
-      "data/fx-eur-gbp-2023-03-15.xml",
-      "data/StarlingStatement_2021-12-01_2022-11-30-eur.csv",
-      "data/StarlingStatement_2021-12-01_2022-11-30-gbp.csv")
-    runAccounts (wiseLine2Entry, "wise") (
-      "Ergates Limited",
-      "data/fx-eur-gbp-2023-03-15.xml",
-      "data/statement_20178858_EUR_2021-12-01_2022-11-30.csv",
-      "data/statement_20203273_GBP_2021-12-01_2022-11-30.csv"
-    )
+
+    //get the starting balances from config ...
+
+    val maybeBalances = Using (io.Source.fromFile ("data/opening_balances.json")) { _.mkString }.toEither
+                          .flatMap { _.fromJson [Array [NamedBalance]] }
+
+    val balances =
+      for
+        balances <- maybeBalances
+      do
+        val balanceMap = balances.foldLeft (Map.empty [String, Double]) { (agg, item) => agg + (item.name -> item.balance) }
+
+        runAccounts (starlingLine2Entry, "starling", balanceMap ("starling")) (
+          "Ergates Limited",
+          "data/fx-eur-gbp-2023-03-15.xml",
+          "data/StarlingStatement_2021-12-01_2022-11-30-eur.csv",
+          "data/StarlingStatement_2021-12-01_2022-11-30-gbp.csv", "out")
+        runAccounts (wiseLine2Entry, "wise", balanceMap ("wise")) (
+          "Ergates Limited",
+          "data/fx-eur-gbp-2023-03-15.xml",
+          "data/statement_20178858_EUR_2021-12-01_2022-11-30.csv",
+          "data/statement_20203273_GBP_2021-12-01_2022-11-30.csv",
+          "out"
+        )
 
