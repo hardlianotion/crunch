@@ -209,7 +209,8 @@ object CurrencyMappedStatement:
         balances <- maybeBalances
       do
         val balanceMap = balances.foldLeft (Map.empty [String, Double]) { (agg, item) => agg + (item.name -> item.balance) }
-
+        val fxEntries = FxReader.fromXml ("data/fx-eur-gbp-2023-03-15.xml")
+        fxEntries.map {entries => FxReader.toCsv ("out/fx-eur-gbp-2023-03-15.csv", entries)}
         runAccounts (starlingLine2Entry, "starling", balanceMap ("starling")) (
           "Ergates Limited",
           "data/fx-eur-gbp-2023-03-15.xml",
