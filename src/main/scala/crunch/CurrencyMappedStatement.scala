@@ -13,6 +13,9 @@ import zio.json.*
 
 object CurrencyMappedStatement:
 
+  enum Currency:
+    case GBP, EUR, USD
+
   /** 
    * FIXME - Start off with just one EUR account and one GBP account
    * 
@@ -52,14 +55,16 @@ object CurrencyMappedStatement:
 
   case class FxEntry (
     at: LocalDate,
-    eur2gbp: Double
+    rate: Double,
+    from: Currency = Currency.EUR,
+    to: Currency = Currency.GBP
   )
 
   def starlingLine2Entry (line: String): BaseEntry =
     val Array (date, counter, ref, kind, amount, balance, _) =
       line.split (",").map (_.trim)
     val formatter = DateTimeFormatter.ofPattern ("dd/MM/uuuu")
-    
+
     BaseEntry (LocalDate.parse (date, formatter), counter, ref, kind, amount.toDouble, balance.toDouble)
 //"TransferWise ID",Date,Amount,Currency,Description,"Payment Reference","Running Balance","Exchange From","Exchange To","Exchange Rate","Payer Name","Payee Name","Payee Account Number",Merchant,"Card Last Four Digits","Card Holder Full Name",Attachment,Note,"Total fees"
   def wiseLine2Entry (line: String): BaseEntry =
@@ -74,12 +79,12 @@ object CurrencyMappedStatement:
       line.split (",").map (_.trim)
     FxEntry (LocalDate.parse (at), eur2gbp.toDouble)
 
-  def eurHeader: String = 
+  def eurHeader: String =
     "Date,Counter Party,Reference,Type,Amount (EUR),Balance (EUR),Spending Category,Notes"
 
-  def gbpHeader: String = 
+  def gbpHeader: String =
     "Date,Counter Party,Reference,Type,Amount (GBP),Balance (GBP),Spending Category,Notes"
-  
+
   def readEntries (line2Entry: String => BaseEntry) (reconcileWith: String, path: String): Try [IndexedSeq [Entry]] =
     @tailrec
     def impl (input: Iterator [String], output: IndexedSeq [Entry]): IndexedSeq [Entry] =
@@ -114,7 +119,7 @@ object CurrencyMappedStatement:
     entries.foldLeft (List.empty [FxEntry]) { (agg, rhs) => rhs match
       case Some (entry) => entry :: agg
       case None => agg
-    }.map (x => x.at.plusDays (1) -> x.eur2gbp).to [SortedMap [LocalDate, Double]] (SortedMap)
+    }.map (x => x.at.plusDays (1) -> x.rate).to [SortedMap [LocalDate, Double]] (SortedMap)
 
 //  val file = File(s"data/service/service-time-gap-${ServiceTime.minServiceGap}-arr-${ServiceTime.arrivalSearchLimit}-pro-${ServiceTime.proximityLimit}-spd-${ServiceTime.loSpeedLimit}-dil-${ServiceTime.timeDilator}-ovr-${ServiceTime.acceptOverlap}.csv ")
 //      val baselineOut = BufferedWriter (FileWriter (file))

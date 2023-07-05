@@ -39,5 +39,5 @@ object FxReader:
       for
         entry <- maybeEntry
       do
-        writer.write (s"${entry.at},${entry.eur2gbp},${1.0 / entry.eur2gbp}\n")
+        writer.write (s"${entry.at},${entry.rate},${1.0 / entry.rate}\n")
     writer.close()
