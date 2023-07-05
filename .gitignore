@@ -3,7 +3,7 @@
 .bsp/
 .metals/
 data/
-out
+out*/
 project/
 target/
 .tags
