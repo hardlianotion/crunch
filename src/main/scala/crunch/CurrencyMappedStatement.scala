@@ -155,7 +155,7 @@ object CurrencyMappedStatement:
   ): Unit =
     val maybeEurEntries = readEntries (line2Entry) (reconcileWith, eurPath)
     val maybeGbpEntries = readEntries (line2Entry) (reconcileWith, gbpPath)
-    val maybeFxEntries = FxReader.fromXml (fxPath)
+    val maybeFxEntries = FxIo.fromXml (fxPath)
     val file = File (s"$outDir/$acctName-eur2gbpout.csv")
     val output = BufferedWriter (FileWriter (file))
 
@@ -214,8 +214,8 @@ object CurrencyMappedStatement:
         balances <- maybeBalances
       do
         val balanceMap = balances.foldLeft (Map.empty [String, Double]) { (agg, item) => agg + (item.name -> item.balance) }
-        val fxEntries = FxReader.fromXml ("data/fx-eur-gbp-2023-03-15.xml")
-        fxEntries.map {entries => FxReader.toCsv ("out/fx-eur-gbp-2023-03-15.csv", entries)}
+        val fxEntries = FxIo.fromXml ("data/fx-eur-gbp-2023-03-15.xml")
+        fxEntries.map {entries => FxIo.toCsv ("out/fx-eur-gbp-2023-03-15.csv", entries)}
         runAccounts (starlingLine2Entry, "starling", balanceMap ("starling")) (
           "Ergates Limited",
           "data/fx-eur-gbp-2023-03-15.xml",

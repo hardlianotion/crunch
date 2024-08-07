@@ -3,10 +3,10 @@
 The purpose of this tool is to convert statements issued by my bank - Starling - into a statement that can be used in 
 reconciliation activity in my online accounting provider, Crunch Accounting.
 
-usage crunch ecb-rates-csv eur-starling-statement-csv gbp-starling-statement-csv
+usage crunch ecb-rates eur-starling-statement-csv gbp-starling-statement-csv
 
 where
- - ecb-rates-csv is a csv containing ecb reference rates for [eur-gbp](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/eurofxref-graph-gbp.en.html)
+ - ecb-rates is the xml file containing ecb reference rates for eur-gbp, downloadable [here](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/eurofxref-graph-gbp.en.html)
  - eur-starling-statement-csv is a csv-formatted starling statement (downloaded from Starling EUR account)
  - gbp-starling-statement-csv is a csv-formatted startling statement (downloaded from Starling GBP account)
 

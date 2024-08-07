@@ -8,7 +8,7 @@ import java.io.{BufferedWriter, File, FileWriter}
 import scala.util.Try
 import scala.xml
 
-object FxReader:
+object FxIo:
 
   def fromCsv (path: String): Try [Iterator [Option [FxEntry]]] =
     Try {
