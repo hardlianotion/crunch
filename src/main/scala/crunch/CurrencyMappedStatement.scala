@@ -68,11 +68,11 @@ object CurrencyMappedStatement:
     BaseEntry (LocalDate.parse (date, formatter), counter, ref, kind, amount.toDouble, balance.toDouble)
 //"TransferWise ID",Date,Amount,Currency,Description,"Payment Reference","Running Balance","Exchange From","Exchange To","Exchange Rate","Payer Name","Payee Name","Payee Account Number",Merchant,"Card Last Four Digits","Card Holder Full Name",Attachment,Note,"Total fees"
   def wiseLine2Entry (line: String): BaseEntry =
-    val Array (id, date, amount, curr, desc, ref, balance, from, to, rate, payer, payee,_, _, _, _, _, _,fees) =
-      line.split (",").map (_.trim)
+    val Array (id, date, amount, curr, desc, ref, balance, fxFrom, fxTo, rate, payer, payee,_, _, _, _, _, _,fees, fxToAmount) =
+      s"$line ".split (",").map (_.trim)
     val formatter = DateTimeFormatter.ofPattern ("dd-MM-uuuu")
 
-    BaseEntry (LocalDate.parse (date, formatter), to, ref, desc, amount.toDouble, balance.toDouble)
+    BaseEntry (LocalDate.parse (date, formatter), fxTo, ref, desc, amount.toDouble, balance.toDouble)
 
   def line2Fx (line: String): FxEntry =
     val Array (at, eur2gbp) =
@@ -85,7 +85,7 @@ object CurrencyMappedStatement:
   def gbpHeader: String =
     "Date,Counter Party,Reference,Type,Amount (GBP),Balance (GBP),Spending Category,Notes"
 
-  def readEntries (line2Entry: String => BaseEntry) (reconcileWith: String, path: String): Try [IndexedSeq [Entry]] =
+  def readEntries (line2Entry: String => BaseEntry) (reconcileWith: String, path: String): Either [Throwable, IndexedSeq [Entry]] =
     @tailrec
     def impl (input: Iterator [String], output: IndexedSeq [Entry]): IndexedSeq [Entry] =
       if input.hasNext then
@@ -113,7 +113,7 @@ object CurrencyMappedStatement:
         input
       else
         input.reverse
-    }
+    }.toEither
 
   def buildFxMap (entries: Iterator [Option [FxEntry]]): SortedMap [LocalDate, Double] =
     entries.foldLeft (List.empty [FxEntry]) { (agg, rhs) => rhs match
@@ -156,7 +156,7 @@ object CurrencyMappedStatement:
     val maybeEurEntries = readEntries (line2Entry) (reconcileWith, eurPath)
     val maybeGbpEntries = readEntries (line2Entry) (reconcileWith, gbpPath)
     val maybeFxEntries = FxIo.fromXml (fxPath)
-    val file = File (s"$outDir/$acctName-eur2gbpout.csv")
+    val file = File (s"$outDir/$acctName-eur2gbp-out.csv")
     val output = BufferedWriter (FileWriter (file))
 
     for
@@ -196,7 +196,7 @@ object CurrencyMappedStatement:
         .foreach (e => writeEntry (e, output))
     output.close ()
 
-  case class NamedBalance (name: String, balance: Double, at: LocalDate)
+  case class NamedBalance (name: String, balance: Double)
 
   implicit val matchDecoder: JsonDecoder [NamedBalance] =
   DeriveJsonDecoder.gen [NamedBalance]
@@ -206,7 +206,7 @@ object CurrencyMappedStatement:
 
     //get the starting balances from config ...
     // NOTE - IMPORTANT! - the balances are taken from the last gbp-mapped balances taken from the last run of this model.
-    val maybeBalances = Using (io.Source.fromFile ("data/opening_gbp_balances.json")) { _.mkString }.toEither
+    val maybeBalances = Using (io.Source.fromFile ("data/opening_gbp_balances-2022-11-30.json")) { _.mkString }.toEither
                           .flatMap { _.fromJson [Array [NamedBalance]] }
 
     val balances =
