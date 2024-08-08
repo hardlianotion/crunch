@@ -66,7 +66,7 @@ object CurrencyMappedStatement:
     val formatter = DateTimeFormatter.ofPattern ("dd/MM/uuuu")
 
     BaseEntry (LocalDate.parse (date, formatter), counter, ref, kind, amount.toDouble, balance.toDouble)
-//"TransferWise ID",Date,Amount,Currency,Description,"Payment Reference","Running Balance","Exchange From","Exchange To","Exchange Rate","Payer Name","Payee Name","Payee Account Number",Merchant,"Card Last Four Digits","Card Holder Full Name",Attachment,Note,"Total fees"
+//"TransferWise ID",Date,Amount,Currency,Description,"Payment Reference","Running Balance","Exchange From","Exchange To","Exchange Rate","Payer Name","Payee Name","Payee Account Number",Merchant,"Card Last Four Digits","Card Holder Full Name",Attachment,Note,"Total fees","Exchange To Amount"
   def wiseLine2Entry (line: String): BaseEntry =
     val Array (id, date, amount, curr, desc, ref, balance, fxFrom, fxTo, rate, payer, payee,_, _, _, _, _, _,fees, fxToAmount) =
       s"$line ".split (",").map (_.trim)
