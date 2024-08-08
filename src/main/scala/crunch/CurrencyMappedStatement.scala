@@ -196,7 +196,7 @@ object CurrencyMappedStatement:
         .foreach (e => writeEntry (e, output))
     output.close ()
 
-  case class NamedBalance (name: String, balance: Double)
+  case class NamedBalance (name: String, balance: Double, at: LocalDate)
 
   implicit val matchDecoder: JsonDecoder [NamedBalance] =
   DeriveJsonDecoder.gen [NamedBalance]
@@ -205,27 +205,29 @@ object CurrencyMappedStatement:
   def run (): Unit =
 
     //get the starting balances from config ...
-
-    val maybeBalances = Using (io.Source.fromFile ("data/opening_balances.json")) { _.mkString }.toEither
+    // NOTE - IMPORTANT! - the balances are taken from the last gbp-mapped balances taken from the last run of this model.
+    val maybeBalances = Using (io.Source.fromFile ("data/opening_gbp_balances.json")) { _.mkString }.toEither
                           .flatMap { _.fromJson [Array [NamedBalance]] }
 
     val balances =
       for
         balances <- maybeBalances
       do
+        val fxFileRoot = "fx-eur-gbp-2024-08-07"
+        val fxPath = s"data/$fxFileRoot.xml"
         val balanceMap = balances.foldLeft (Map.empty [String, Double]) { (agg, item) => agg + (item.name -> item.balance) }
-        val fxEntries = FxIo.fromXml ("data/fx-eur-gbp-2023-03-15.xml")
-        fxEntries.map {entries => FxIo.toCsv ("out/fx-eur-gbp-2023-03-15.csv", entries)}
+        val fxEntries = FxIo.fromXml (fxPath)
+        fxEntries.map {entries => FxIo.toCsv (s"out/$fxFileRoot.csv", entries)}
         runAccounts (starlingLine2Entry, "starling", balanceMap ("starling")) (
           "Ergates Limited",
-          "data/fx-eur-gbp-2023-03-15.xml",
-          "data/StarlingStatement_2021-12-01_2022-11-30-eur.csv",
-          "data/StarlingStatement_2021-12-01_2022-11-30-gbp.csv", "out")
+          fxPath,
+          "data/StarlingStatement_2022-12-01_2023-11-30-EUR.csv",
+          "data/StarlingStatement_2022-12-01_2023-11-30-GBP.csv", "out")
         runAccounts (wiseLine2Entry, "wise", balanceMap ("wise")) (
           "Ergates Limited",
-          "data/fx-eur-gbp-2023-03-15.xml",
-          "data/statement_20178858_EUR_2021-12-01_2022-11-30.csv",
-          "data/statement_20203273_GBP_2021-12-01_2022-11-30.csv",
+          fxPath,
+          "data/statement_774176_EUR_2022-12-01_2023-11-30.csv",
+          "data/statement_774168_GBP_2022-12-01_2023-11-30.csv",
           "out"
         )
 
