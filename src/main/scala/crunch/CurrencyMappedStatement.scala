@@ -109,7 +109,9 @@ object CurrencyMappedStatement:
       val lines = source.getLines.drop (1)
 
       val input = impl (lines, IndexedSeq.empty [Entry])
-      if input.head.date.isBefore (input.last.date) then
+      if input.isEmpty then
+        input
+      else if input.head.date.isBefore (input.last.date) then
         input
       else
         input.reverse
@@ -165,18 +167,18 @@ object CurrencyMappedStatement:
       eurEntries <- maybeEurEntries
     do
       val fxMap = buildFxMap (fxEntries)
-      val gbpTransfers = 
+      val gbpTransfers =
         gbpEntries
           .foldLeft (Map.empty [DateRank, TransferEntry]) {
             case (agg, trans @ TransferEntry (dr, counter, ref, amt)) =>
               @tailrec
-              def impl (dr: DateRank): DateRank = 
+              def impl (dr: DateRank): DateRank =
                 if agg.contains (dr) then
                   impl (DateRank (dr.at, dr.rank + 1))
                 else
                   dr
               agg + (impl (dr) -> trans)
-            case (agg, base: BaseEntry) => 
+            case (agg, base: BaseEntry) =>
               agg
           }
       // transform entries into GBP
@@ -226,8 +228,8 @@ object CurrencyMappedStatement:
         runAccounts (wiseLine2Entry, "wise", balanceMap ("wise")) (
           "Ergates Limited",
           fxPath,
-          "data/statement_774176_EUR_2022-12-01_2023-11-30.csv",
-          "data/statement_774168_GBP_2022-12-01_2023-11-30.csv",
+          "data/statement_20178858_EUR_2022-12-01_2023-11-30.csv",
+          "data/statement_20203273_GBP_2022-12-01_2023-11-30.csv",
           "out"
         )
 
