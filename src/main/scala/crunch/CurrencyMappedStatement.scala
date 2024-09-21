@@ -6,6 +6,7 @@ import java.io.{BufferedWriter, File, FileWriter}
 import java.time.temporal.{ChronoField, ChronoUnit}
 import scala.annotation.tailrec
 import scala.io.Source.fromFile
+import scala.util.matching.Regex
 import scala.collection.SortedMap
 import scala.util.{Try, Using}
 import zio.json.*
@@ -15,6 +16,8 @@ object CurrencyMappedStatement:
 
   enum Currency:
     case GBP, EUR, USD
+
+  val dirpayRegex = "(dirpay|Dirpay|Dir-pay|Dir pay)".r
 
   /** 
    * FIXME - Start off with just one EUR account and one GBP account
@@ -126,7 +129,7 @@ object CurrencyMappedStatement:
 //  val file = File(s"data/service/service-time-gap-${ServiceTime.minServiceGap}-arr-${ServiceTime.arrivalSearchLimit}-pro-${ServiceTime.proximityLimit}-spd-${ServiceTime.loSpeedLimit}-dil-${ServiceTime.timeDilator}-ovr-${ServiceTime.acceptOverlap}.csv ")
 //      val baselineOut = BufferedWriter (FileWriter (file))
 
-  def transformEurEntry (eurEntry: Entry, fxMap: SortedMap [LocalDate, Double], gbpTransfers: Map [DateRank, TransferEntry]): BaseEntry =
+  def transformEurEntry (eurEntry: Entry, salary: NamedBalance, fxMap: SortedMap [LocalDate, Double], gbpTransfers: Map [DateRank, TransferEntry]): BaseEntry =
     eurEntry match
       case te @ TransferEntry (dt, counter, ref, amt) =>
         val gbpTran = gbpTransfers (dt)
@@ -134,10 +137,16 @@ object CurrencyMappedStatement:
 
         BaseEntry (dt.at, counter, ref, "TRANSFER CURRENCY", amount, 0.0)
       case ent @ BaseEntry (dt, counter, ref, kind, amt, bal) =>
-        val fxTran = fxMap.get (dt).orElse (fxMap.maxBefore (dt).map ( x => x._2)).getOrElse (Double.NegativeInfinity)
-        val amountTran = fxTran * amt
+        if dirpayRegex.findFirstIn(ref).isDefined then
+          BaseEntry (dt, counter, ref, kind, -salary.balance, 0.0)
+        else
+          val fxTran = fxMap.get (dt).orElse (fxMap.maxBefore (dt).map ( x => x._2)).getOrElse (Double.NegativeInfinity)
+          val amountTran = fxTran * amt
+          BaseEntry (dt, counter, ref, kind, amountTran, 0.0)
 
-        BaseEntry (dt, counter, ref, kind, amountTran, 0.0)
+
+  def transformEURSalary (eurEntry: Entry, salary: NamedBalance): BaseEntry =
+    ???
 
 
   def writeEntry (entry: BaseEntry, writer: BufferedWriter): Unit =
@@ -147,7 +156,7 @@ object CurrencyMappedStatement:
     writer.write (s"$dateStr,${entry.counter},${entry.reference},${entry.kind},$amountStr,$balStr\n")
 
   def runAccounts (
-    line2Entry: String => BaseEntry, acctName: String, gbpBalance: Double
+    line2Entry: String => BaseEntry, acctName: String, gbpBalance: Double, salary: NamedBalance
   ) (
     reconcileWith: String,
     fxPath: String,
@@ -186,7 +195,7 @@ object CurrencyMappedStatement:
       // write to file.
       println (s"There are ${eurEntries.size} EUR entries and ${gbpEntries.size} GBP entries.")
       eurEntries
-        .map (e => transformEurEntry (e, fxMap, gbpTransfers))
+        .map (e => transformEurEntry (e, salary, fxMap, gbpTransfers))
         .foldLeft (IndexedSeq.empty [BaseEntry]) { (agg, rhs) =>
           if agg.isEmpty then
             val balance = f"${rhs.amount + gbpBalance}%2.2f".toDouble
@@ -208,11 +217,17 @@ object CurrencyMappedStatement:
 
     //get the starting balances from config ...
     // NOTE - IMPORTANT! - the balances are taken from the last gbp-mapped balances taken from the last run of this model.
-    val maybeBalances = Using (io.Source.fromFile ("data/opening_gbp_balances-2022-11-30.json")) { _.mkString }.toEither
+    val maybeBalances = Using (io.Source.fromFile ("data/opening_gbp_balances-2022-11-30.json")) { _.mkString }
+                          .toEither
                           .flatMap { _.fromJson [Array [NamedBalance]] }
+
+    val maybeSalary = Using (io.Source.fromFile ("data/salary-2023.json")) { _.mkString }
+                        .toEither
+                        .flatMap { _.fromJson [NamedBalance] }
 
     val balances =
       for
+        salary <- maybeSalary
         balances <- maybeBalances
       do
         val fxFileRoot = "fx-eur-gbp-2024-08-07"
@@ -220,12 +235,12 @@ object CurrencyMappedStatement:
         val balanceMap = balances.foldLeft (Map.empty [String, Double]) { (agg, item) => agg + (item.name -> item.balance) }
         val fxEntries = FxIo.fromXml (fxPath)
         fxEntries.map {entries => FxIo.toCsv (s"out/$fxFileRoot.csv", entries)}
-        runAccounts (starlingLine2Entry, "starling", balanceMap ("starling")) (
+        runAccounts (starlingLine2Entry, "starling", balanceMap ("starling"), salary) (
           "Ergates Limited",
           fxPath,
           "data/StarlingStatement_2022-12-01_2023-11-30-EUR.csv",
           "data/StarlingStatement_2022-12-01_2023-11-30-GBP.csv", "out")
-        runAccounts (wiseLine2Entry, "wise", balanceMap ("wise")) (
+        runAccounts (wiseLine2Entry, "wise", balanceMap ("wise"), salary) (
           "Ergates Limited",
           fxPath,
           "data/statement_20178858_EUR_2022-12-01_2023-11-30.csv",
