@@ -1,7 +1,7 @@
 package crunch
 
 import java.time.format.DateTimeFormatter
-import java.time.{Duration, LocalDate}
+import java.time.LocalDate
 import java.io.{BufferedWriter, File, FileWriter}
 import java.time.temporal.{ChronoField, ChronoUnit}
 import scala.annotation.tailrec
@@ -17,7 +17,7 @@ object CurrencyMappedStatement:
   enum Currency:
     case GBP, EUR, USD
 
-  val dirpayRegex = "(dirpay|Dirpay|Dir-pay|Dir pay)".r
+  val dirpayRegex = "(dirpay|Dirpay|Dir-pay|Dir pay)(?!tax)".r
 
   /** 
    * FIXME - Start off with just one EUR account and one GBP account
